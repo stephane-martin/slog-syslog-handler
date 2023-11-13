@@ -4,41 +4,33 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
-	"log/syslog"
 	"sync"
 )
+
+type SyslogLogger interface {
+	Debug(string) error
+	Info(string) error
+	Notice(string) error
+	Warning(string) error
+	Err(string) error
+	Crit(string) error
+}
 
 type SyslogHandler struct {
 	opts         *slog.HandlerOptions
 	buf          *bytes.Buffer
 	jsonHandler  slog.Handler
 	textHandler  slog.Handler
-	syslogWriter *syslog.Writer
+	syslogWriter SyslogLogger
 	mu           *sync.Mutex
 	writeJson    bool
 }
 
-var emptyAttr slog.Attr
-
-func removeLevel(groups []string, a slog.Attr) slog.Attr {
-	if len(groups) == 0 {
-		if a.Key == slog.LevelKey || a.Key == slog.TimeKey {
-			return slog.Attr{}
-		}
-	}
-	return a
+func NewLogger(w SyslogLogger, writeJson bool, opts *slog.HandlerOptions) *slog.Logger {
+	return slog.New(NewSyslogHandler(w, writeJson, opts))
 }
 
-func wrapReplaceAttr(repl func([]string, slog.Attr) slog.Attr) func([]string, slog.Attr) slog.Attr {
-	if repl == nil {
-		return removeLevel
-	}
-	return func(groups []string, a slog.Attr) slog.Attr {
-		return removeLevel(groups, repl(groups, a))
-	}
-}
-
-func NewSyslogHandler(w *syslog.Writer, writeJson bool, opts *slog.HandlerOptions) *SyslogHandler {
+func NewSyslogHandler(w SyslogLogger, writeJson bool, opts *slog.HandlerOptions) *SyslogHandler {
 	if opts == nil {
 		opts = &slog.HandlerOptions{
 			ReplaceAttr: removeLevel,
@@ -63,6 +55,26 @@ func NewSyslogHandler(w *syslog.Writer, writeJson bool, opts *slog.HandlerOption
 		h.textHandler = slog.NewTextHandler(h.buf, opts)
 	}
 	return h
+}
+
+var emptyAttr slog.Attr
+
+func removeLevel(groups []string, a slog.Attr) slog.Attr {
+	if len(groups) == 0 {
+		if a.Key == slog.LevelKey || a.Key == slog.TimeKey {
+			return emptyAttr
+		}
+	}
+	return a
+}
+
+func wrapReplaceAttr(repl func([]string, slog.Attr) slog.Attr) func([]string, slog.Attr) slog.Attr {
+	if repl == nil {
+		return removeLevel
+	}
+	return func(groups []string, a slog.Attr) slog.Attr {
+		return removeLevel(groups, repl(groups, a))
+	}
 }
 
 func (h *SyslogHandler) Enabled(_ context.Context, l slog.Level) bool {
