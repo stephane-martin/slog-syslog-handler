@@ -133,7 +133,7 @@ func (h *SyslogHandler) Handle(ctx context.Context, record slog.Record) error {
 			return err
 		}
 	}
-	msg := h.buf.String()
+	msg := string(bytes.TrimSpace(h.buf.Bytes()))
 	switch {
 	case record.Level <= slog.LevelDebug:
 		return h.syslogWriter.Debug(msg)
