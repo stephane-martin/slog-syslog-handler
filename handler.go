@@ -74,6 +74,9 @@ func (h *SyslogHandler) Enabled(_ context.Context, l slog.Level) bool {
 }
 
 func (h *SyslogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	// the Mutex protects the buffer from concurrent writes
+	// because we allocate another buffer in the new handler,
+	// we don't need to share the same mutex with the new handler.
 	newHandler := &SyslogHandler{
 		opts:         h.opts,
 		buf:          new(bytes.Buffer),
@@ -90,10 +93,19 @@ func (h *SyslogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 }
 
 func (h *SyslogHandler) WithGroup(name string) slog.Handler {
-	if h.writeJson {
-		return h.jsonHandler.WithGroup(name)
+	newHandler := &SyslogHandler{
+		opts:         h.opts,
+		buf:          new(bytes.Buffer),
+		mu:           new(sync.Mutex),
+		syslogWriter: h.syslogWriter,
+		writeJson:    h.writeJson,
 	}
-	return h.textHandler.WithGroup(name)
+	if h.writeJson {
+		newHandler.jsonHandler = h.jsonHandler.WithGroup(name)
+	} else {
+		newHandler.textHandler = h.textHandler.WithGroup(name)
+	}
+	return newHandler
 }
 
 func (h *SyslogHandler) Handle(ctx context.Context, record slog.Record) error {
